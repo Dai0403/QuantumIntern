@@ -1,0 +1,601 @@
+---
+title: "quantium_script"
+author: "Dai Taniguchi"
+date: "2023-10-17"
+output: 
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+# set options for R markdown knitting
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(linewidth=80)
+knitr::opts_chunk$set(echo = TRUE) 
+```
+
+```{r libraries, include=FALSE}
+library(tidyverse)
+library(ggplot2)
+library(janitor)
+library(lubridate)
+library(stringr)
+library(ggrepel)
+
+pacman::p_load(ggplot2, dplyr , readxl ,data.table, ggmosaic, readr)
+```
+
+### Before everything, load the required libraries and data sets
+
+```{r}
+pacman::p_load(ggplot2, dplyr , readxl ,data.table, ggmosaic, readr)
+```
+
+Converting the data set into a data.table which allows me to use data.table-specific functions and syntax
+
+```{r intodataframe }
+transaction_data = read_excel("QVI_transaction_data.xlsx")
+purchase_behaviour = read.csv("QVI_purchase_behaviour.csv")
+transaction_data = data.table(transaction_data)
+purchase_behaviour = data.table(purchase_behaviour)
+```
+
+\-\-\--
+
+Below is the workflow of this paper
+
+### **Exploratory data analysis flow**
+
+1.  **Correct data types**
+
+2.  **Remove outliers**
+
+3.  **Spot data issues in transaction dates**
+
+4.  **Explore pack sizes**
+
+5.  **Correct wrongly or differently spelled brand names**
+
+6.  **Examine the number of customers and segments**
+
+### **Customer analysis flow**
+
+1.  **The proportion of sales by segments**
+
+2.  **The proportion of customers by segments**
+
+3.  **The number of units sold per customer**
+
+4.  **The average price per unit spent by each customer during a transaction.**
+
+5.  **Conduct independent T-test**
+
+6.  **Identify the target customers that have the greatest impact on sales.**
+
+7.  **identify the most popular pack sizes and brands among the target customer base compared to others**
+
+\-\--
+
+Okay let's get started
+
+## **Exploratory data analyis**
+
+### 1. Correct data types
+
+First let's look at the data set. Apparently this data set contains 264,836 transaction data. The format of DATE column is num and value starts with 43282 meaning that the day is 43282 days away from the origin date in excel that is 30 December 1899.
+
+```{r 1}
+str(transaction_data)
+```
+
+The DATE column is converted into date format. Others look fine.
+
+```{r 2}
+transaction_data$DATE = as.Date(transaction_data$DATE , origin = "1899-12-30")
+```
+
+Remove duplicates, 3 found
+
+```{r 3}
+unique(transaction_data)
+```
+
+### 2. Remove outliers
+
+To find something unusual, look at mean, min, and max values. The max value of PROD_QTY is 200 (purchased 200 packs at one transaction) which is unusual and considered outlier.
+
+There are no nulls as all the summary statistics have a numerical value
+
+```{r 4}
+summary(transaction_data)
+```
+
+Filter the data set to find the outlier. Turns out the same customer did those two transactions at the same store.
+
+```{r 5}
+filter(transaction_data, PROD_QTY == 200)
+```
+
+Check other past transactions of that customer who caused the outlier. No other transactions were done by the customer except for those two where he purchased 200 packs of chips.
+
+```{r 6}
+transaction_data[LYLTY_CARD_NBR == 226000, ]
+```
+
+Remove the customer as we don't need outliers. They are likely to be a bug.
+
+```{r 7}
+transaction_data = transaction_data[LYLTY_CARD_NBR != 226000]
+```
+
+### 3. Spot data issues in transaction dates
+
+Try to find other data issues such as missing data or outlier by looking at date and transaction. And this shows only 364 days, not 365 days. it's missing 1 day.
+
+```{r 8}
+transaction_data[,.N, by = DATE] 
+```
+
+Count the number of transaction by date
+
+```{r 9}
+#Create a sequence of dates and join this the count of transactions by date
+all_dates = data.table(seq(as.Date("2018-07-01"), as.Date("2019-06-30"), by = 'day'))
+setnames(all_dates, 'DATE')
+#join all_dates and tranasaction_data (left join) by DATE column
+transaction_by_day = merge(all_dates, transaction_data[,.N, by = DATE], all.x = TRUE)
+```
+
+Create a plot to check the missing date. Some thing seemed to happen in December.
+
+```{r 10}
+theme_set(theme_bw())
+theme_update(plot.title = element_text(hjust = 0.5))
+
+transaction_by_day %>% 
+  ggplot(aes(x = DATE, y = N)) +
+  geom_line(col = "#1e99e6") +
+  labs(x = "Day", y = "Number of transactions", title = "Transactions Over Time") +
+  scale_x_date(breaks = "1 month") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5))
+```
+
+To find out what happend in December, zoom in. There was not sales on christmas because stores are closed. Okay nice. The issue solved.
+
+```{r 11}
+# there was not sales on christmas because stores are closed. -> issues solved
+ggplot(transaction_by_day[month(DATE) == 12, ], aes(x = DATE, y = N)) +
+  geom_line(col = "#1e99e6") +
+  labs(x = "Day", y = "Number of transactions", title = "Transactions over time") +
+  scale_x_date(breaks = "1 day") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5))
+```
+
+### 4. Explore pack sizes
+
+We are going to keep exploring the transaction data. Up next is pack size.
+
+Get the number (pack size) from the product name. There are 21 pack sizes in the data. It's min 70g, max 380g. Looks fine, not unusual sizes in there.
+
+```{r 12}
+transaction_data = mutate(transaction_data, PACK_SIZE = as.numeric(str_extract(PROD_NAME, "\\d+")))
+summary(transaction_data$PACK_SIZE)
+
+
+```
+
+Create a bar chart of PACK_SIZE to look at the distribution. Looks pretty fine.
+
+```{r 13}
+options(scipen=999) # turn off scientific notations like 1e+05
+ggplot(transaction_data, aes(x = PACK_SIZE)) +
+  geom_histogram(binwidth = 20, fill = "#8ecae6", color = "white") +
+  labs(title = "Chips' Packaging Size",
+       x = "Size (g)", y = "Total no. of packs purchased")
+summary(transaction_data$PACK_SIZE)
+
+```
+
+### 5. Correct wrongly or differently spelled brand names
+
+First make a column of brand names, and then arrange it in order or occurrence to see brand names and their popularity at once. There are 29 brand names in total but there might be some overlapping.
+
+```{r 14}
+transaction_data = transaction_data %>%
+  mutate(BRAND = toupper(substr(PROD_NAME, 1, regexpr(pattern = ' ', PROD_NAME) - 1))) 
+
+transaction_data %>%
+  group_by(BRAND) %>%
+  summarise(count = n()) %>%
+  arrange(desc(count))
+
+```
+
+Turns out there are some issues there because of misspelling or different conventions in stores. Correct and unify them to certain names e.g., RED -\> RRD, SNBTS -\> SUNBITES
+
+```{r 15}
+transaction_data = transaction_data %>%
+  mutate(BRAND = case_when(
+    BRAND == "RED" ~ "RRD",
+    BRAND == "SNBTS" ~ "SUNBITES",
+    BRAND == "INFZNS" ~ "INFUZIONS",
+    BRAND == "WW" ~ "WOOLWORTHS",
+    BRAND == "SMITH" ~ "SMITHS",
+    BRAND == "NCC" ~ "NATURAL",
+    BRAND == "DORITO" ~ "DORITOS",
+    BRAND == "GRAIN" ~ "GRNWVES",
+    TRUE ~ BRAND
+  ))
+```
+
+### 6. Examine the number of customers and segments
+
+Examine customer data.
+
+This is the data that provides the description of 72637 customers who purchased the chips such as their loyalty card number, life stage and customer type i.e., the price point of products they buy and the types of products they buy.
+
+```{r 16}
+str(purchase_behaviour)
+```
+
+```{r 17}
+summary(purchase_behaviour)
+```
+
+Let's examine the value of LIFSTAGE and PREMIUM_CUSTOMER
+
+LIFESTAGE: top 3 life stage categories are RETIREES, OLDER SINGLES/COUPLES, and YOUNG SINGLES/COUPLES
+
+```{r 18}
+purchase_behaviour %>%
+  group_by(LIFESTAGE) %>%
+  summarise(N = n()) %>%
+  arrange(desc(N))
+```
+
+```{r 19}
+purchase_behaviour %>%
+  group_by(LIFESTAGE) %>%
+  summarise(CustomerCount = n_distinct(LYLTY_CARD_NBR)) %>% 
+  ggplot(aes(x = LIFESTAGE, y = CustomerCount)) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  labs(x = "Life Stage", y = "Number of Customers") +
+  ggtitle("Number of Customers by Lifestage") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5))+
+  theme_minimal()+
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 10))
+```
+
+PREMIUM_CUSTOMER: The biggest category is Mainstream, the smallest is
+
+```{r 20}
+purchase_behaviour %>%
+  group_by(PREMIUM_CUSTOMER) %>%
+  summarise(N = n()) %>%
+  arrange(desc(N))
+```
+
+```{r 21}
+purchase_behaviour %>%
+  group_by(PREMIUM_CUSTOMER) %>%
+  summarise(CustomerCount = n_distinct(LYLTY_CARD_NBR)) %>% 
+  ggplot(aes(x = PREMIUM_CUSTOMER, y = CustomerCount)) +
+  geom_bar(stat = "identity", fill = "#ffd166") +
+  labs(x = "PREMIUM_CUSTOMER", y = "Number of Customers") +
+  ggtitle("Number of Customers by Budget") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5))+
+  theme_minimal()+
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 10))
+```
+
+That's all for exploratory data analysis. But before moving to customer analysis, I'm merging the transaction and customer data that I cleaned and examined so far.
+
+```{r 22}
+data = merge(transaction_data, purchase_behaviour, all.x = TRUE)
+
+```
+
+Check if some customers are not matched on by checking nulls. All good.
+
+```{r 23}
+colSums(is.na(data))
+```
+
+Save the cleaned data for further analysis
+
+```{r 24}
+summary(data)
+write.csv(data, "cleaned_data.csv")
+```
+
+## **Customer analysis**
+
+Finally the data set is ready to be analyzed following the various questions according to our interests:
+
+-   What is the cause of higher sales by segments?
+
+-   The number of customers, or the average spending or unit per customer?
+
+    -   What are the customer segments that contribute to the sales the most?
+
+    -   How many customers are in each segment?
+
+    -   How many chips are bought per customer by segments?
+
+-   Who are the target customers who have the greatest impact on sales?
+
+-   What brands do the target customers like to buy?
+
+### **1. The proportion of sales by segments**
+
+Let's start with calculating total sales by LIFESTAGE and PREMIUM_CUSTOMER and plotting the split by these segments to describe which customer segment contribute most to chip sales.
+
+We can see from the plot that the sales are mostly due to the budget- older families, mainstream young single/couples, and mainstream - retirees.
+
+```{r 25}
+sales = data %>%
+  group_by(LIFESTAGE, PREMIUM_CUSTOMER) %>%
+  summarise(SALES = sum(TOT_SALES), .groups = "keep")
+
+sales$PERCENT = (sales$SALES /sum(data$TOT_SALES)) * 100
+
+heatmap_sales = ggplot(data = sales) + 
+  geom_tile(aes(x = LIFESTAGE, y = PREMIUM_CUSTOMER, fill = SALES)) +
+  labs(fill = "Sales") + 
+  labs(x = NULL, y = NULL) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 0, vjust = 0.5, size = 6), 
+    axis.text.y = element_text(vjust = 0.5, size = 8),
+    axis.title.x = element_text(margin = margin(t = 12)),  # Adjust the top margin for x-axis label
+    axis.title.y = element_text(margin = margin(r = 12)) 
+    ) +
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 10)) +
+  scale_fill_gradient(low = "white", high = "#2ec4b6")+
+  labs(
+    x = "Lifestage", 
+    y = "Affluence Level", 
+    fill = "Sales", 
+    title = "Proportion of Sales by Affluence and Life stage") 
+
+
+heatmap_sales +  
+  geom_text(aes(x = LIFESTAGE, y = PREMIUM_CUSTOMER, label = paste(round(.data[["PERCENT"]], 1), "%")), size = 3, color = "black") 
+```
+
+### **2. The proportion of customers by segments**
+
+We will examine the number of customers to see if the highers sales are due to there being more customers who buy chips.
+
+As a result, from here we can see that mainstream- young/single couples and mainstream retirees contribute most to the sales of chips. There might be other factors for the higher sales. We will examine
+
+```{r}
+customer_count = data %>%
+  group_by(LIFESTAGE, PREMIUM_CUSTOMER) %>%
+  summarise(CUSTOMER_COUNT = uniqueN(LYLTY_CARD_NBR), .groups = "keep")
+sales = merge(sales, customer_count, x.all = TRUE)
+
+sum_customer = sum(sales$CUSTOMER_COUNT)
+sales$CUSTOMER_PERCENT = (sales$CUSTOMER_COUNT / sum_customer ) * 100
+
+heatmap_customer = ggplot(data = sales) + 
+  geom_tile(aes(x = LIFESTAGE, y = PREMIUM_CUSTOMER, fill = CUSTOMER_COUNT)) +
+  labs(x = "Lifestage", y = "Premium Customer", fill = "Customers", title = "Proportion of Customers by Affluence and Life stage") + 
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 0, vjust = 0.5, size = 6), 
+    axis.text.y = element_text(vjust = 0.5, size = 8),
+    axis.title.x = element_text(margin = margin(t = 12)),  # Adjust the top margin for x-axis label
+    axis.title.y = element_text(margin = margin(r = 12)) 
+    ) +
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 10)) +
+  scale_fill_gradient(low = "white", high = "#00b4d8")
+
+heatmap_customer +  geom_text(aes(x = LIFESTAGE, y = PREMIUM_CUSTOMER, label = paste(round(.data[["CUSTOMER_PERCENT"]], 1), "%")), size = 3, color = "black")
+```
+
+### **3. The number of units sold per customer**
+
+There are more Mainstream - young singles/couples and Mainstream - retirees who buy chips. This contributes to there being more sales to these customer segments but this is not a major driver for the Budget - Older families segment.
+
+Higher sales may also be driven by more units of chips being bought per customer. Let's have a look at this next.
+
+```{r}
+avg_unit = data %>% 
+  group_by(LIFESTAGE, PREMIUM_CUSTOMER) %>% 
+  summarise(AVG_UNIT = sum(PROD_QTY)/uniqueN(LYLTY_CARD_NBR), .groups = "keep")
+
+ggplot(data = avg_unit, aes(weight = AVG_UNIT, x = LIFESTAGE, fill = PREMIUM_CUSTOMER)) + geom_bar(position = position_dodge()) +
+  labs(x = "Lifestage", y = "Avg units per Customer", title = "Units Sold per Customer") + 
+  theme(axis.text.x = element_text(angle = 50, vjust = 0.75, size = 7)) +
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 10))
+```
+
+Young families and old families have generally bought more chips in comparison with the midage and retirees
+
+### **4. The average price per unit spent by each customer during a transaction.**
+
+Let's also investigate the average price per unit chips bought for each customer segment as this is also a driver of total sales.
+
+```{r}
+avg_price = data %>% 
+  group_by(LIFESTAGE, PREMIUM_CUSTOMER) %>% 
+  summarise(AVG_PRICE = sum(TOT_SALES)/sum(PROD_QTY), .groups = "keep")
+
+ggplot(data = avg_price, aes(weight = AVG_PRICE, x = LIFESTAGE, fill = PREMIUM_CUSTOMER)) + geom_bar(position = position_dodge()) +
+  labs(x = "Lifestage", y = "Avg Price per Customer", title = "Average Price of Packet of Chips Spent per Customer") + 
+  theme(axis.text.x = element_text(angle = 30, vjust = 0.75, size = 7)) +
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 10))
+```
+
+Mainstream midage and young singles and couples are more willing to pay more per packet of chips compared to their budget and premium counterparts. This may be due to premium shoppers being more likely to buy healthy snacks and when they buy chips, this is mainly for entertainment purposes rather than their own consumption. This is also supported by there being fewer premium midage and young singles and couples buying chips compared to their mainstream counterparts.
+
+```{r}
+avg_per_cust = data %>% 
+  group_by(LIFESTAGE, PREMIUM_CUSTOMER) %>% 
+  summarise(AVG_PER_CUST = sum(TOT_SALES)/uniqueN(LYLTY_CARD_NBR), .groups = "keep")
+
+ggplot(data = avg_per_cust, aes(weight = AVG_PER_CUST, x = LIFESTAGE, fill = PREMIUM_CUSTOMER)) + geom_bar(position = position_dodge()) +
+  labs(x = "Lifestage", y = "Avg Spent per Customer", title = "Average Price Spent per Customer by Segment") + 
+  theme(axis.text.x = element_text(angle = 30, vjust = 0.75, size = 7)) +
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 10))
+```
+
+### **5. Conduct independent T-test**
+
+As the difference in average price per unit isn't large, we can check if this difference is statistically different.
+
+```{r}
+# get the average price per packet in each transaction (e.g., 5 euros for two packs of chips at one purchase-> price is 2.5),
+data = data %>% 
+  mutate(price = TOT_SALES / PROD_QTY)
+
+# 1. get the price from young singles/couples and midage singles/couples with the mainstream classification
+group1 = data %>% 
+  filter(LIFESTAGE %in% c("YOUNG SINGLES/COUPLES", "MIDAGE SINGLES/COUPLES") & PREMIUM_CUSTOMER == "Mainstream") %>%
+  pull(price)
+
+# 2. get the price form young singles/couples and midage singles/couples other than the mainstream classification 
+group2 = data %>% 
+  filter(LIFESTAGE %in% c("YOUNG SINGLES/COUPLES", "MIDAGE SINGLES/COUPLES") & PREMIUM_CUSTOMER != "Mainstream") %>%
+  pull(price)
+
+#3. 
+t_test_result = t.test(group1, group2, alternative = "greater")
+print(t_test_result)
+```
+
+The t-test results in a p-value of 2.2e-16 , i.e. the unit price for mainstream, young and mid-age singles and couples ARE significantly higher than that of budget or premium, young and midage singles and couples.
+
+Deep dive into specific customer segments for insights We have found quite a few interesting insights that we can dive deeper into. We might want to target customer segments that contribute the most to sales to retain them or further increase sales. Let's look at Mainstream - young singles/couples. For instance, let's find out if they tend to buy a particular brand of chips.
+
+### **6. Identify the target customers that have the greatest impact on sales.**
+
+```{r}
+# Filter segment1 and other
+segment1 <- data %>%
+  filter(LIFESTAGE == "YOUNG SINGLES/COUPLES" & PREMIUM_CUSTOMER == "Mainstream")
+
+other <- data %>%
+  filter(!(LIFESTAGE == "YOUNG SINGLES/COUPLES" & PREMIUM_CUSTOMER == "Mainstream"))
+
+# Calculate quantities (total quantities in segment1 and others)
+quantity_segment1 <- sum(segment1$PROD_QTY)
+quantity_other <- sum(other$PROD_QTY)
+
+sum(segment1$PROD_QTY)
+
+# Calculate quantities by brand (quantity grouped by brands / total quantity of segment1)
+# -> spot popular brands among the target segment compared to other
+
+quantity_segment1_by_brand = segment1 %>%
+  group_by(BRAND) %>%
+  summarise(targetSegment = sum(PROD_QTY)/quantity_segment1)
+# Calculate quantities by brand (quantity grouped by brands / total quantity of other)
+quantity_other_by_brand = other %>%
+  group_by(BRAND) %>%
+  summarise(other = sum(PROD_QTY)/quantity_other)
+
+# Merge data frames
+brand_proportions = merge(quantity_segment1_by_brand, quantity_other_by_brand)
+ 
+# Calculate affinityToBrand () (how bigger the proportion of the target segment by brands than other)
+brand_proportions = brand_proportions %>%
+  mutate(affinityToBrand = targetSegment/other)
+
+# Order by affinityToBrand
+brand_proportions = arrange(brand_proportions, desc(affinityToBrand))
+print(brand_proportions)
+
+
+brand_proportions %>% 
+  mutate(BRAND = reorder(BRAND, -affinityToBrand)) %>%
+  ggplot(aes(x = BRAND, y = affinityToBrand)) +
+  geom_bar(stat = "identity", fill = "#adb5bd") +
+  labs(x = "Brands", y = "Brand Affinity", title = NULL) +
+  theme_minimal() + 
+  theme(axis.text.x = element_text(angle = 30, vjust = 0.75, size = 7)) +
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 10))
+
+#--------------------
+brand_proportions %>%
+  mutate(BRAND = reorder(BRAND, -affinityToBrand)) %>%
+  ggplot(aes(x = BRAND, y = affinityToBrand)) +
+  geom_bar(stat = "identity", fill = "#adb5bd") +
+  geom_text(aes(label = paste0(round(affinityToBrand, 2))),
+            position = position_stack(vjust = 1.02),
+            box.padding = 5,  # Adjust padding
+            size = 3) +  # Use ggrepel for label repelling
+  labs(x = "Brands", y = "Brand Affinity", title = NULL) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 30, vjust = 0.75, size = 7),
+        panel.grid.major = element_blank(),  # Remove major grid lines
+        panel.grid.minor = element_blank(),  # Remove minor grid lines
+        panel.border = element_blank())+   # Remove panel border
+        scale_x_discrete(labels = function(x) str_wrap(x, width = 10))
+
+#-------------------------
+
+brand_proportions %>%
+  mutate(BRAND = reorder(BRAND, -affinityToBrand)) %>%
+  ggplot(aes(x = BRAND, y = affinityToBrand)) +
+  geom_bar(stat = "identity", fill = "#adb5bd") +
+  geom_text(aes(label = paste0(round(affinityToBrand * 100, 1), "%")),
+            position = position_stack(vjust = 0.5), size = 3) +  # Add labels
+  labs(x = "Brands", y = "Brand Affinity", title = NULL) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 30, vjust = 0.75, size = 7)) +
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 10))
+```
+
+### **7. identify the most popular pack sizes and brands among the target customer base compared to others**
+
+spot popular pack size among the target segment compared to other
+
+```{r}
+quantity_segment1_by_pack <- segment1 %>%
+  group_by(PACK_SIZE) %>%
+  summarise(targetSegment = sum(PROD_QTY)/quantity_segment1)
+
+quantity_other_by_pack <- other %>%
+  group_by(PACK_SIZE) %>%
+  summarise(other = sum(PROD_QTY)/quantity_other)
+
+pack_proportions <- merge(quantity_segment1_by_pack, quantity_other_by_pack) %>%
+  mutate(affinityToPack = targetSegment/other) %>%
+  arrange(desc(affinityToPack))
+
+print(pack_proportions)
+
+pack_proportions %>% 
+  mutate(PACK_SIZE = reorder(PACK_SIZE, -affinityToPack)) %>%
+  ggplot(aes(x = PACK_SIZE, y = affinityToPack)) +
+  geom_bar(stat = "identity", fill = "#d5bdaf") +
+  geom_text(aes(label = paste0(round(affinityToPack, 2))),
+            position = position_stack(vjust = 1.02),
+            box.padding = 5,  # Adjust padding
+            size = 3) +  # Use ggrepel for label repelling
+  labs(x = "Pack Size", y = "Pack-size Affinity", title = NULL) +
+  theme_minimal() + 
+  theme(axis.text.x = element_text(angle = 0, vjust = 7, size = 8),
+        panel.grid.major = element_blank(),  # Remove major grid lines
+        panel.grid.minor = element_blank(),  # Remove minor grid lines
+        panel.border = element_blank())+   # Remove panel border
+        scale_x_discrete(labels = function(x) str_wrap(x, width = 10))
+  
+
+# 270 380 330 134 110 
+#data %>% 
+ # group_by(BRAND) %>% 
+#filter(PACK_SIZE == 270 | PACK_SIZE == 380 | PACK_SIZE == 330 |PACK_SIZE == 134 | PACK_SIZE == 110 )
+
+View(data %>%
+  group_by(BRAND) %>%
+  filter(PACK_SIZE %in% c(270, 380, 330, 134, 110)) %>%
+  arrange(PROD_NAME, BRAND))
+print(data)
+
+View(data %>%
+  filter(PACK_SIZE %in% c(270, 380, 330, 134, 110)) %>%
+  distinct(PROD_NAME))
+```
