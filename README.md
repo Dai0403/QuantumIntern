@@ -28,7 +28,8 @@ Use R/Python for data analysis and visualization and summarise findings and prov
 
 
 
-Task 3: provide insights and recommendations 
+Task 3: 
+Provide insights and recommendations 
 Submit a report that incorporates data visualizations, key insights, and recommendations.
 
 
