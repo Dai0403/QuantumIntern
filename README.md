@@ -36,5 +36,6 @@ Submit a report that incorporates data visualizations, key insights, and recomme
 
 
 Datasets:
+
 The 2 datasets (transaction data, customer behaviour) are downloadable here.
 https://www.kaggle.com/datasets/daitaniguchi/quantium-virtual-internship-raw-data)
