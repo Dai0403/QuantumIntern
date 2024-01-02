@@ -8,6 +8,11 @@ Background:
 As part of Quantium's retail analytics team, our client, the Category Manager for Chips, seeks insights into customer purchasing behavior and trends. To support the upcoming category review, we aim to analyze data and present strategic recommendations. The focus is on understanding customer segments and their chip purchasing behavior. Key metrics to consider include purchase frequency, basket size, preferred chip types, and regional variations in buying patterns.
 The end goal is to form a strategy based on the findings to provide a clear recommendation so make sure your insights can have a commercial application.
 
+Datasets:
+
+The 2 datasets (transaction data, customer behaviour) are downloadable here.
+https://www.kaggle.com/datasets/daitaniguchi/quantium-virtual-internship-raw-data)
+
 
 
 Task 1:
@@ -32,10 +37,3 @@ Task 3:
 
 Provide insights and recommendations 
 Submit a report that incorporates data visualizations, key insights, and recommendations.
-
-
-
-Datasets:
-
-The 2 datasets (transaction data, customer behaviour) are downloadable here.
-https://www.kaggle.com/datasets/daitaniguchi/quantium-virtual-internship-raw-data)
