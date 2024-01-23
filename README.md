@@ -1,6 +1,6 @@
-# Quantum Virtual Internship
+# Retail Analysis Using R
 
-This project is part of a virtual work experience program on Forage (https://www.theforage.com/)
+This project is part of a virtual work experience program on Quantum Virtual Internship on Forage (https://www.theforage.com/)
 
 
 Background:
