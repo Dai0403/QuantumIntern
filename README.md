@@ -17,23 +17,23 @@ https://www.kaggle.com/datasets/daitaniguchi/quantium-virtual-internship-raw-dat
 
 Task 1:
 
-Data exploration analysis, creating and interpreting high-level summaries of the data
-Analyze transaction and customer data to identify trends and inconsistencies. 
-Develop metrics and examine sales drivers to gain insights into overall sales performance. 
-Create visualizations and prepare findings to formulate a clear recommendation for the client's strategy.
+- Data exploration analysis, creating and interpreting high-level summaries of the data
+- Analyze transaction and customer data to identify trends and inconsistencies. 
+- Develop metrics and examine sales drivers to gain insights into overall sales performance. 
+- Create visualizations and prepare findings to formulate a clear recommendation for the client's strategy.
 
 
 
 Task 2:
 
-Test the impact of the new trial layouts
-Define metrics to select control stores.
-Analyze trial stores against controls.
-Use R/Python for data analysis and visualization and summarise findings and provide recommendations.
+- Test the impact of the new trial layouts
+- Define metrics to select control stores.
+- Analyze trial stores against controls.
+- Use R/Python for data analysis and visualization and summarise findings and provide recommendations.
 
 
 
 Task 3: 
 
-Provide insights and recommendations 
-Submit a report that incorporates data visualizations, key insights, and recommendations.
+- Provide insights and recommendations 
+- Submit a report that incorporates data visualizations, key insights, and recommendations.
